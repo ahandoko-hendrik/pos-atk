@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: pos_db_dev
+    environment:
+      POSTGRES_DB: pos_atk
+      POSTGRES_USER: pos
+      POSTGRES_PASSWORD: pos_dev_password
+      TZ: Asia/Jakarta
+    ports:
+      - "5432:5432"
+    volumes:
+      - pos_db_dev:/var/lib/postgresql/data
+volumes:
+  pos_db_dev:
