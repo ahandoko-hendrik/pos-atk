@@ -2,8 +2,12 @@
 
 namespace App\Filament\Resources\Products\Tables;
 
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
 use Illuminate\Support\Facades\DB;
 
 class ProductsTable
@@ -18,11 +22,8 @@ class ProductsTable
                 TextColumn::make('base_unit')->label('Satuan'),
                 TextColumn::make('stok')
                     ->label('Stok')
-                    ->state(fn($record) => (float) DB::table('stock_balances')->where('product_id', $record->id)->sum('qty')),
+                    ->state(fn ($record) => (float) DB::table('stock_balances')->where('product_id', $record->id)->sum('qty')),
                 IconColumn::make('is_active')->label('Aktif')->boolean(),
-            ])
-            ->filters([
-                //
             ])
             ->recordActions([
                 EditAction::make(),

@@ -2,18 +2,10 @@
 
 namespace App\Models;
 
-
 class ProductPrice extends PosModel
 {
-    public $timestamps = true;   // tabel products punya created_at dan updated_at
-
-    public function category()
+    public function tier()
     {
-        return $this->belongsTo(Category::class);
-    }
-
-    public function prices()
-    {
-        return $this->hasMany(ProductPrice::class);
+        return $this->belongsTo(PriceTier::class, 'tier_id');
     }
 }
