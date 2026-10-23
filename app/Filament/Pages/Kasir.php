@@ -19,6 +19,11 @@ class Kasir extends Page
     public $cart = [];          // kunci: "idproduk-satuan"
     public $discount = 0;
     public $cash = 0;
+    public $method = 'tunai';
+    public $tierCode = 'ECERAN';
+    public $customerId = '';
+    public $useCredit = false;
+    public $dueDate = '';
 
     public function addByBarcode(): void
     {
@@ -46,9 +51,7 @@ class Kasir extends Page
 
             return;
         }
-        $price = DB::table('product_prices')
-            ->where('product_id', $id)->where('unit_kind', $unitKind)
-            ->where('tier_id', $this->tierId())->value('price');
+        $price = $this->priceFor($id, $unitKind);
         if ($price === null) {
             Notification::make()->title('Harga ' . $p->name . ' belum diisi')->warning()->send();
 
@@ -60,7 +63,7 @@ class Kasir extends Page
             'name' => $p->name,
             'unit' => $unitKind === 'alternatif' ? $p->alt_unit : $p->base_unit,
             'qty' => 1,
-            'unit_price' => (float) $price,
+            'unit_price' => $price,
             'discount' => 0,
         ];
     }
@@ -88,9 +91,89 @@ class Kasir extends Page
         return max(0, $sub - (float) $this->discount);
     }
 
+    // harga menurut tingkat yang dipilih; bila belum diisi, memakai harga ECERAN
+    private function priceFor(int $productId, string $unitKind): ?float
+    {
+        foreach ([$this->tierCode, 'ECERAN'] as $code) {
+            $price = DB::table('product_prices as pp')
+                ->join('price_tiers as t', 't.id', '=', 'pp.tier_id')
+                ->where('pp.product_id', $productId)
+                ->where('pp.unit_kind', $unitKind)
+                ->where('t.code', $code)
+                ->value('pp.price');
+            if ($price !== null) {
+                return (float) $price;
+            }
+        }
+
+        return null;
+    }
+
     private function tierId(): int
     {
-        return (int) DB::table('price_tiers')->where('code', 'ECERAN')->value('id');
+        return (int) DB::table('price_tiers')->where('code', $this->tierCode)->value('id');
+    }
+
+    public function tiers()
+    {
+        return DB::table('price_tiers')->orderBy('id')->get(['code', 'name']);
+    }
+
+    public function customers()
+    {
+        return DB::table('customers')->where('is_active', true)->orderBy('name')->get(['id', 'code', 'name']);
+    }
+
+    public function customer(): ?object
+    {
+        if (! $this->customerId) {
+            return null;
+        }
+
+        return DB::table('customers')->where('id', (int) $this->customerId)->first();
+    }
+
+    public function outstanding(): float
+    {
+        if (! $this->customerId) {
+            return 0.0;
+        }
+
+        return (float) DB::table('v_receivable')->where('customer_id', (int) $this->customerId)->sum('outstanding');
+    }
+
+    // ---- reaksi saat pilihan berubah ----
+    public function updatedTierCode(): void
+    {
+        foreach ($this->cart as $key => $line) {
+            $price = $this->priceFor($line['product_id'], $line['unit_kind']);
+            if ($price !== null) {
+                $this->cart[$key]['unit_price'] = $price;
+            }
+        }
+    }
+
+    public function updatedCustomerId(): void
+    {
+        $this->useCredit = false;
+        $this->dueDate = '';
+    }
+
+    public function updatedUseCredit($value): void
+    {
+        if (! $value) {
+            $this->dueDate = '';
+
+            return;
+        }
+        $c = $this->customer();
+        if (! $c || ! $c->allow_credit) {
+            $this->useCredit = false;
+            Notification::make()->title('Pelanggan ini tidak boleh tempo')->warning()->send();
+
+            return;
+        }
+        $this->dueDate = now()->addDays((int) $c->credit_days)->toDateString();
     }
 
     public function checkout(SaleService $sales): void
@@ -102,14 +185,36 @@ class Kasir extends Page
                 return;
             }
         }
+
+        $customerId = $this->customerId ? (int) $this->customerId : null;
+        $total = $this->total();
+        $paid = min((float) $this->cash, $total);
+
+        $dueDate = null;
+        if ($this->useCredit && $paid < $total) {
+            if (! $customerId) {
+                Notification::make()->title('Pilih pelanggan untuk penjualan tempo')->warning()->send();
+
+                return;
+            }
+            if ($this->dueDate === '') {
+                Notification::make()->title('Isi tanggal jatuh tempo')->warning()->send();
+
+                return;
+            }
+            $dueDate = (string) $this->dueDate;
+        }
+
         try {
             $saleId = $sales->checkout(
                 items: array_values($this->cart),
-                payments: [['method' => 'tunai', 'amount' => min((float) $this->cash, $this->total())]],
+                payments: [['method' => $this->method, 'amount' => $paid]],
                 cashierId: auth()->id(),
                 locationId: (int) DB::table('locations')->where('code', 'TOKO')->value('id'),
                 tierId: $this->tierId(),
+                customerId: $customerId,
                 discount: (float) $this->discount,
+                dueDate: $dueDate,
             );
         } catch (Throwable $e) {
             Notification::make()->title('Transaksi gagal')->body($this->friendly($e))->danger()->send();
@@ -117,14 +222,14 @@ class Kasir extends Page
             return;
         }
         $docNo = DB::table('sales')->where('id', $saleId)->value('doc_no');
-        $this->reset(['cart', 'discount', 'cash', 'barcode', 'search']);
+        $this->reset(['cart', 'discount', 'cash', 'barcode', 'search', 'customerId', 'useCredit', 'dueDate', 'tierCode', 'method']);
         Notification::make()->title('Nota ' . $docNo . ' tersimpan')->success()->send();
         $this->dispatch('cetak-struk', url: route('struk', $saleId));
     }
 
     private function friendly(Throwable $e): string
     {
-        // pesan dari database, mis. "Stok tidak cukup (...)"
+        // pesan dari database, mis. "Stok tidak cukup (...)" atau "Melebihi batas kredit ..."
         if (preg_match('/ERROR:\s+(.+?)\s+\(Connection:/s', $e->getMessage(), $m)) {
             return $m[1];
         }

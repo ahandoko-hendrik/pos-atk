@@ -55,17 +55,74 @@
             <x-filament::section>
                 <div style="font-size:28px; font-weight:700;">Rp{{ number_format($this->total(), 0, ',', '.') }}</div>
 
+                <div style="margin-top:12px;">Tingkat harga</div>
+                <x-filament::input.wrapper>
+                    <x-filament::input.select wire:model.live="tierCode">
+                        @foreach ($this->tiers() as $t)
+                            <option value="{{ $t->code }}">{{ $t->name }}</option>
+                        @endforeach
+                    </x-filament::input.select>
+                </x-filament::input.wrapper>
+
+                <div style="margin-top:12px;">Pelanggan</div>
+                <x-filament::input.wrapper>
+                    <x-filament::input.select wire:model.live="customerId">
+                        <option value="">Umum (tanpa pelanggan)</option>
+                        @foreach ($this->customers() as $c)
+                            <option value="{{ $c->id }}">{{ $c->name }} ({{ $c->code }})</option>
+                        @endforeach
+                    </x-filament::input.select>
+                </x-filament::input.wrapper>
+
+                @php $cust = $this->customer(); @endphp
+                @if ($cust)
+                    <div style="margin-top:8px; font-size:13px;">
+                        Piutang berjalan: <b>Rp{{ number_format($this->outstanding(), 0, ',', '.') }}</b>
+                        @if ($cust->allow_credit && $cust->credit_limit > 0)
+                            &middot; Batas kredit Rp{{ number_format($cust->credit_limit, 0, ',', '.') }}
+                        @endif
+                    </div>
+                    @if ($cust->allow_credit)
+                        <label style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+                            <x-filament::input.checkbox wire:model.live="useCredit" /> Penjualan tempo
+                        </label>
+                        @if ($useCredit)
+                            <div style="margin-top:8px;">Jatuh tempo</div>
+                            <x-filament::input.wrapper>
+                                <x-filament::input type="date" wire:model="dueDate" />
+                            </x-filament::input.wrapper>
+                        @endif
+                    @else
+                        <div style="margin-top:8px; font-size:13px;">Pelanggan ini tidak boleh tempo.</div>
+                    @endif
+                @endif
+
                 <div style="margin-top:12px;">Diskon nota (Rp)</div>
                 <x-filament::input.wrapper>
                     <x-filament::input type="number" min="0" wire:model.live.debounce.400ms="discount" />
                 </x-filament::input.wrapper>
 
-                <div style="margin-top:12px;">Uang diterima (Rp)</div>
+                <div style="margin-top:12px;">Metode bayar</div>
+                <x-filament::input.wrapper>
+                    <x-filament::input.select wire:model="method">
+                        <option value="tunai">Tunai</option>
+                        <option value="transfer">Transfer</option>
+                        <option value="qris">QRIS</option>
+                    </x-filament::input.select>
+                </x-filament::input.wrapper>
+
+                <div style="margin-top:12px;">{{ $useCredit ? 'Uang muka / dibayar sekarang (Rp)' : 'Uang diterima (Rp)' }}</div>
                 <x-filament::input.wrapper>
                     <x-filament::input type="number" min="0" wire:model.live.debounce.400ms="cash" />
                 </x-filament::input.wrapper>
 
-                <div style="margin-top:12px;">Kembalian: <b>Rp{{ number_format(max(0, (float) $cash - $this->total()), 0, ',', '.') }}</b></div>
+                <div style="margin-top:12px;">
+                    @if ($useCredit)
+                        Sisa tagihan (tempo): <b>Rp{{ number_format(max(0, $this->total() - (float) $cash), 0, ',', '.') }}</b>
+                    @else
+                        Kembalian: <b>Rp{{ number_format(max(0, (float) $cash - $this->total()), 0, ',', '.') }}</b>
+                    @endif
+                </div>
 
                 <div style="margin-top:16px;">
                     <x-filament::button wire:click="checkout" :disabled="! $cart" style="width:100%;">Bayar</x-filament::button>

@@ -12,7 +12,10 @@
 <body onload="window.print()">
     <b>CV PL MAJU</b><br>
     {{ $sale->doc_no }}<br>
-    {{ date('d/m/Y H:i', strtotime($sale->sale_date)) }}
+    {{ date('d/m/Y H:i', strtotime($sale->sale_date)) }}<br>
+    @if ($customerName)
+        Pelanggan: {{ $customerName }}<br>
+    @endif
     <hr>
     @foreach ($items as $i)
         {{ $i->name }}<br>
@@ -24,6 +27,12 @@
     @foreach ($payments as $p)
         {{ strtoupper($p->method) }} {{ number_format($p->amount, 0, ',', '.') }}<br>
     @endforeach
+    @if ($sale->total > $sale->paid_total)
+        <b>SISA TAGIHAN {{ number_format($sale->total - $sale->paid_total, 0, ',', '.') }}</b><br>
+        @if ($sale->due_date)
+            Jatuh tempo {{ date('d/m/Y', strtotime($sale->due_date)) }}<br>
+        @endif
+    @endif
     <hr>
     Terima kasih
 </body>

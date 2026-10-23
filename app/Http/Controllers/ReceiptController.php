@@ -23,6 +23,10 @@ class ReceiptController extends Controller
             ->select('pay.method', 'a.amount')
             ->get();
 
-        return view('struk', compact('sale', 'items', 'payments'));
+        $customerName = $sale->customer_id
+            ? DB::table('customers')->where('id', $sale->customer_id)->value('name')
+            : null;
+
+        return view('struk', compact('sale', 'items', 'payments', 'customerName'));
     }
 }
