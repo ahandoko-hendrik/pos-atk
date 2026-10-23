@@ -24,7 +24,73 @@ class Kasir extends Page
     public $customerId = '';
     public $useCredit = false;
     public $dueDate = '';
+    public $openingCash = 0;
+    public $countedCash = '';
 
+    // ---------------- shift kasir ----------------
+    public function shift(): ?object
+    {
+        return DB::table('cash_shifts')
+            ->where('cashier_id', auth()->id())
+            ->whereNull('closed_at')
+            ->first();
+    }
+
+    public function openShift(): void
+    {
+        if ($this->shift()) {
+            return;
+        }
+        DB::table('cash_shifts')->insert([
+            'cashier_id' => auth()->id(),
+            'location_id' => $this->tokoId(),
+            'opening_cash' => max(0, (float) $this->openingCash),
+        ]);
+        $this->openingCash = 0;
+        Notification::make()->title('Shift dibuka')->success()->send();
+        $this->dispatch('fokus-barcode');
+    }
+
+    public function shiftSales(): float
+    {
+        $s = $this->shift();
+
+        return $s
+            ? (float) DB::table('sales')->where('shift_id', $s->id)->where('status', 'selesai')->sum('total')
+            : 0.0;
+    }
+
+    public function closeShift(): void
+    {
+        $s = $this->shift();
+        if (! $s) {
+            return;
+        }
+        if ($this->countedCash === '' || $this->countedCash === null) {
+            Notification::make()->title('Isi jumlah uang yang ada di laci')->warning()->send();
+
+            return;
+        }
+        try {
+            $selisih = (float) DB::selectOne(
+                'select close_shift(?::bigint, ?::numeric) as selisih',
+                [$s->id, (float) $this->countedCash]
+            )->selisih;
+        } catch (Throwable $e) {
+            Notification::make()->title('Shift gagal ditutup')->body($this->friendly($e))->danger()->send();
+
+            return;
+        }
+        $this->countedCash = '';
+        $teks = $selisih == 0.0
+            ? 'Kas pas, tidak ada selisih.'
+            : ($selisih < 0
+                ? 'Uang KURANG Rp' . number_format(abs($selisih), 0, ',', '.')
+                : 'Uang LEBIH Rp' . number_format($selisih, 0, ',', '.'));
+        Notification::make()->title('Shift ditutup')->body($teks)->success()->persistent()->send();
+    }
+
+    // ---------------- keranjang ----------------
     public function addByBarcode(): void
     {
         $code = trim((string) $this->barcode);
@@ -114,6 +180,11 @@ class Kasir extends Page
         return (int) DB::table('price_tiers')->where('code', $this->tierCode)->value('id');
     }
 
+    private function tokoId(): int
+    {
+        return (int) DB::table('locations')->where('code', 'TOKO')->value('id');
+    }
+
     public function tiers()
     {
         return DB::table('price_tiers')->orderBy('id')->get(['code', 'name']);
@@ -142,7 +213,7 @@ class Kasir extends Page
         return (float) DB::table('v_receivable')->where('customer_id', (int) $this->customerId)->sum('outstanding');
     }
 
-    // ---- reaksi saat pilihan berubah ----
+    // ---------------- reaksi saat pilihan berubah ----------------
     public function updatedTierCode(): void
     {
         foreach ($this->cart as $key => $line) {
@@ -176,8 +247,18 @@ class Kasir extends Page
         $this->dueDate = now()->addDays((int) $c->credit_days)->toDateString();
     }
 
+    // ---------------- bayar ----------------
     public function checkout(SaleService $sales): void
     {
+        $shift = $this->shift();
+        if (! $shift) {
+            Notification::make()->title('Buka shift terlebih dahulu')->warning()->send();
+
+            return;
+        }
+        if (! $this->cart) {
+            return;
+        }
         foreach ($this->cart as $l) {
             if ((float) $l['qty'] <= 0) {
                 Notification::make()->title('Jumlah harus lebih dari 0')->warning()->send();
@@ -210,11 +291,12 @@ class Kasir extends Page
                 items: array_values($this->cart),
                 payments: [['method' => $this->method, 'amount' => $paid]],
                 cashierId: auth()->id(),
-                locationId: (int) DB::table('locations')->where('code', 'TOKO')->value('id'),
+                locationId: $this->tokoId(),
                 tierId: $this->tierId(),
                 customerId: $customerId,
                 discount: (float) $this->discount,
                 dueDate: $dueDate,
+                shiftId: (int) $shift->id,
             );
         } catch (Throwable $e) {
             Notification::make()->title('Transaksi gagal')->body($this->friendly($e))->danger()->send();
@@ -225,6 +307,7 @@ class Kasir extends Page
         $this->reset(['cart', 'discount', 'cash', 'barcode', 'search', 'customerId', 'useCredit', 'dueDate', 'tierCode', 'method']);
         Notification::make()->title('Nota ' . $docNo . ' tersimpan')->success()->send();
         $this->dispatch('cetak-struk', url: route('struk', $saleId));
+        $this->dispatch('fokus-barcode');
     }
 
     private function friendly(Throwable $e): string
