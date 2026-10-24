@@ -8,6 +8,10 @@ use Illuminate\Support\Facades\DB;
 
 class TokoStats extends StatsOverviewWidget
 {
+        public static function canView(): bool
+    {
+        return auth()->user()?->isAdmin() ?? false;
+    }
     protected function getStats(): array
     {
         $hariIni = now()->toDateString();

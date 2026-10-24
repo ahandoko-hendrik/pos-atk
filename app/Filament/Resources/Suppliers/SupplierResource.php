@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Suppliers;
 
+use App\Filament\Concerns\AdminOnly;
+
 use App\Filament\Resources\Suppliers\Pages\CreateSupplier;
 use App\Filament\Resources\Suppliers\Pages\EditSupplier;
 use App\Filament\Resources\Suppliers\Pages\ListSuppliers;
@@ -16,6 +18,8 @@ use Filament\Tables\Table;
 
 class SupplierResource extends Resource
 {
+    use AdminOnly;
+
     protected static ?string $model = Supplier::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;

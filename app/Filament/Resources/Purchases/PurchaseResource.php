@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Purchases;
 
+use App\Filament\Concerns\AdminOnly;
+
 use App\Filament\Resources\Purchases\Pages\CreatePurchase;
 use App\Filament\Resources\Purchases\Pages\EditPurchase;
 use App\Filament\Resources\Purchases\Pages\ListPurchases;
@@ -17,6 +19,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class PurchaseResource extends Resource
 {
+    use AdminOnly;
+
     protected static ?string $model = Purchase::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;

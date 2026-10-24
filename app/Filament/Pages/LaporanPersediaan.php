@@ -2,6 +2,8 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\AdminOnly;
+
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -10,6 +12,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LaporanPersediaan extends Page
 {
+    use AdminOnly;
+
     protected string $view = 'filament.pages.laporan-persediaan';
 
     public $dari = '';

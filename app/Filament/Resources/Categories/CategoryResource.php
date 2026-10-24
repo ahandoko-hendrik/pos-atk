@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Categories;
 
+use App\Filament\Concerns\AdminOnly;
+
 use App\Filament\Resources\Categories\Pages\CreateCategory;
 use App\Filament\Resources\Categories\Pages\EditCategory;
 use App\Filament\Resources\Categories\Pages\ListCategories;
@@ -16,6 +18,8 @@ use Filament\Tables\Table;
 
 class CategoryResource extends Resource
 {
+    use AdminOnly;
+
     protected static ?string $model = Category::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
