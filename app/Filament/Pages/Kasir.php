@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Services\SaleService;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Throwable;
@@ -14,8 +15,8 @@ class Kasir extends Page
 {
     protected string $view = 'filament.pages.kasir';
 
-    public $barcode = '';       // properti input dibiarkan tanpa tipe agar isian kosong tidak error
     public $search = '';
+    public $kategori = '';
     public $cart = [];          // kunci: "idproduk-satuan"
     public $discount = 0;
     public $cash = 0;
@@ -26,6 +27,17 @@ class Kasir extends Page
     public $dueDate = '';
     public $openingCash = 0;
     public $countedCash = '';
+    public $showClose = false;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'Transaksi';
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 1;
+    }
 
     // ---------------- shift kasir ----------------
     public function shift(): ?object
@@ -60,6 +72,12 @@ class Kasir extends Page
             : 0.0;
     }
 
+    public function toggleClose(): void
+    {
+        $this->showClose = ! $this->showClose;
+        $this->countedCash = '';
+    }
+
     public function closeShift(): void
     {
         $s = $this->shift();
@@ -82,6 +100,7 @@ class Kasir extends Page
             return;
         }
         $this->countedCash = '';
+        $this->showClose = false;
         $teks = $selisih == 0.0
             ? 'Kas pas, tidak ada selisih.'
             : ($selisih < 0
@@ -90,28 +109,94 @@ class Kasir extends Page
         Notification::make()->title('Shift ditutup')->body($teks)->success()->persistent()->send();
     }
 
-    // ---------------- keranjang ----------------
-    public function addByBarcode(): void
+    // ---------------- katalog produk ----------------
+    public function categories()
     {
-        $code = trim((string) $this->barcode);
-        $this->barcode = '';
+        return DB::table('categories')->orderBy('name')->get(['id', 'name']);
+    }
+
+    public function cards(): Collection
+    {
+        $loc = $this->tokoId();
+        $tierId = $this->tierId();
+        $eceranId = (int) DB::table('price_tiers')->where('code', 'ECERAN')->value('id');
+        $s = trim((string) $this->search);
+
+        return DB::table('products as p')
+            ->join('categories as c', 'c.id', '=', 'p.category_id')
+            ->leftJoin('stock_balances as b', function ($j) use ($loc) {
+                $j->on('b.product_id', '=', 'p.id')->where('b.location_id', '=', $loc);
+            })
+            ->leftJoin('product_prices as pt', function ($j) use ($tierId) {
+                $j->on('pt.product_id', '=', 'p.id')->where('pt.unit_kind', '=', 'dasar')->where('pt.tier_id', '=', $tierId);
+            })
+            ->leftJoin('product_prices as pe', function ($j) use ($eceranId) {
+                $j->on('pe.product_id', '=', 'p.id')->where('pe.unit_kind', '=', 'dasar')->where('pe.tier_id', '=', $eceranId);
+            })
+            ->where('p.is_active', true)
+            ->when($this->kategori !== '', fn ($q) => $q->where('p.category_id', (int) $this->kategori))
+            ->when($s !== '', fn ($q) => $q->where(fn ($w) => $w
+                ->where('p.name', 'ilike', '%' . $s . '%')
+                ->orWhere('p.sku', 'ilike', '%' . $s . '%')
+                ->orWhere('p.barcode', $s)))
+            ->orderBy('p.name')
+            ->limit(60)
+            ->get([
+                'p.id', 'p.sku', 'p.name', 'p.base_unit', 'p.alt_unit', 'p.min_stock',
+                'c.name as kategori',
+                DB::raw('coalesce(b.qty, 0) as stok'),
+                DB::raw('coalesce(pt.price, pe.price) as harga'),
+            ]);
+    }
+
+    // Enter di kolom cari: cocokkan barcode/SKU persis; bila tidak ada, ambil bila hasil pencarian tinggal satu
+    public function scanOrAdd(): void
+    {
+        $code = trim((string) $this->search);
         if ($code === '') {
             return;
         }
         $p = Product::where('is_active', true)
             ->where(fn ($q) => $q->where('barcode', $code)->orWhere('sku', $code))
             ->first();
-        if ($p) {
-            $this->addProduct($p->id);
-        } else {
-            Notification::make()->title('Barang tidak ditemukan')->warning()->send();
+        if (! $p) {
+            $list = $this->cards();
+            if ($list->count() === 1) {
+                $p = Product::find($list->first()->id);
+            }
         }
+        if (! $p) {
+            Notification::make()->title('Barang tidak ditemukan')->warning()->send();
+
+            return;
+        }
+        $this->addProduct($p->id);
+        $this->search = '';
     }
 
+    // ---------------- keranjang ----------------
     public function addProduct(int $id, string $unitKind = 'dasar'): void
     {
         $p = Product::findOrFail($id);
         $key = $id . '-' . $unitKind;
+
+        if ($unitKind === 'alternatif' && ! $p->alt_unit_qty) {
+            return;
+        }
+        $need = $unitKind === 'alternatif' ? (float) $p->alt_unit_qty : 1.0;
+        $onCart = isset($this->cart[$key]) ? (float) $this->cart[$key]['qty'] : 0.0;
+        $stock = (float) DB::table('stock_balances')
+            ->where('product_id', $id)->where('location_id', $this->tokoId())->value('qty');
+        $allowNeg = DB::table('app_settings')->where('key', 'allow_negative_stock')->value('value') === 'true';
+        if (! $allowNeg && ($onCart + 1) * $need > $stock) {
+            Notification::make()
+                ->title('Stok ' . $p->name . ' tidak cukup')
+                ->body('Stok tersedia ' . rtrim(rtrim(number_format($stock, 3, ',', '.'), '0'), ',') . ' ' . $p->base_unit)
+                ->warning()->send();
+
+            return;
+        }
+
         if (isset($this->cart[$key])) {
             $this->cart[$key]['qty']++;
 
@@ -139,15 +224,10 @@ class Kasir extends Page
         unset($this->cart[$key]);
     }
 
-    public function results()
+    public function resetCart(): void
     {
-        if (strlen(trim((string) $this->search)) < 2) {
-            return collect();
-        }
-
-        return Product::where('is_active', true)
-            ->where('name', 'ilike', '%' . trim($this->search) . '%')
-            ->orderBy('name')->limit(8)->get();
+        $this->reset(['cart', 'discount', 'cash', 'search', 'customerId', 'useCredit', 'dueDate']);
+        $this->dispatch('fokus-barcode');
     }
 
     public function total(): float
@@ -304,7 +384,7 @@ class Kasir extends Page
             return;
         }
         $docNo = DB::table('sales')->where('id', $saleId)->value('doc_no');
-        $this->reset(['cart', 'discount', 'cash', 'barcode', 'search', 'customerId', 'useCredit', 'dueDate', 'tierCode', 'method']);
+        $this->reset(['cart', 'discount', 'cash', 'search', 'customerId', 'useCredit', 'dueDate', 'tierCode', 'method']);
         Notification::make()->title('Nota ' . $docNo . ' tersimpan')->success()->send();
         $this->dispatch('cetak-struk', url: route('struk', $saleId));
         $this->dispatch('fokus-barcode');
