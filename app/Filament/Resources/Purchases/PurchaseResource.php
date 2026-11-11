@@ -19,6 +19,31 @@ use Illuminate\Database\Eloquent\Model;
 
 class PurchaseResource extends Resource
 {
+    public static function getNavigationLabel(): string
+    {
+        return 'Pembelian';
+    }
+
+    public static function getModelLabel(): string
+    {
+        return 'pembelian';
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return 'pembelian';
+    }
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'Transaksi';
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 2;
+    }
+
     use AdminOnly;
 
     protected static ?string $model = Purchase::class;

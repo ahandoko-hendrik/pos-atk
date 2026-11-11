@@ -11,6 +11,16 @@ use Throwable;
 
 class StokOpname extends Page
 {
+    public static function getNavigationGroup(): ?string
+    {
+        return 'Stok';
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 1;
+    }
+
     use AdminOnly;
 
     protected string $view = 'filament.pages.stok-opname';

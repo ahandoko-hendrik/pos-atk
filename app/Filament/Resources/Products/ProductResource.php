@@ -18,6 +18,31 @@ use Filament\Tables\Table;
 
 class ProductResource extends Resource
 {
+    public static function getNavigationLabel(): string
+    {
+        return 'Produk';
+    }
+
+    public static function getModelLabel(): string
+    {
+        return 'produk';
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return 'produk';
+    }
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'Master Data';
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 1;
+    }
+
     use AdminOnly;
 
     protected static ?string $model = Product::class;

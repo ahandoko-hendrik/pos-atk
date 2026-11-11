@@ -12,6 +12,16 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LaporanPersediaan extends Page
 {
+    public static function getNavigationGroup(): ?string
+    {
+        return 'Laporan';
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 1;
+    }
+
     use AdminOnly;
 
     protected string $view = 'filament.pages.laporan-persediaan';

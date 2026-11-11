@@ -18,6 +18,31 @@ use Filament\Tables\Table;
 
 class SupplierResource extends Resource
 {
+    public static function getNavigationLabel(): string
+    {
+        return 'Pemasok';
+    }
+
+    public static function getModelLabel(): string
+    {
+        return 'pemasok';
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return 'pemasok';
+    }
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'Master Data';
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 4;
+    }
+
     use AdminOnly;
 
     protected static ?string $model = Supplier::class;

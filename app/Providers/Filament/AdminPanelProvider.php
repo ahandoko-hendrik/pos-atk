@@ -28,6 +28,10 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->sidebarCollapsibleOnDesktop()
+            ->maxContentWidth('full')
+            ->navigationGroups(['Transaksi', 'Stok', 'Laporan', 'Master Data', 'Pengaturan'])
+            ->renderHook(\Filament\View\PanelsRenderHook::HEAD_END, fn (): string => view('filament.tema')->render())
             ->colors([
                 'primary' => Color::Blue,
             ])

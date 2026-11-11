@@ -18,6 +18,31 @@ use Filament\Tables\Table;
 
 class CategoryResource extends Resource
 {
+    public static function getNavigationLabel(): string
+    {
+        return 'Kategori';
+    }
+
+    public static function getModelLabel(): string
+    {
+        return 'kategori';
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return 'kategori';
+    }
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'Master Data';
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 2;
+    }
+
     use AdminOnly;
 
     protected static ?string $model = Category::class;

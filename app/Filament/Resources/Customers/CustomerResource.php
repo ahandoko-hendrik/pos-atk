@@ -18,6 +18,31 @@ use Filament\Tables\Table;
 
 class CustomerResource extends Resource
 {
+    public static function getNavigationLabel(): string
+    {
+        return 'Pelanggan';
+    }
+
+    public static function getModelLabel(): string
+    {
+        return 'pelanggan';
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return 'pelanggan';
+    }
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'Master Data';
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 3;
+    }
+
     use AdminOnly;
 
     protected static ?string $model = Customer::class;

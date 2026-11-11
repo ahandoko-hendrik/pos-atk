@@ -11,6 +11,16 @@ use Throwable;
 
 class Piutang extends Page
 {
+    public static function getNavigationGroup(): ?string
+    {
+        return 'Transaksi';
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 3;
+    }
+
     protected string $view = 'filament.pages.piutang';
 
     public $customerId = '';
