@@ -175,48 +175,84 @@ class Kasir extends Page
     }
 
     // ---------------- keranjang ----------------
-    public function addProduct(int $id, string $unitKind = 'dasar'): void
+    private function stockOk(Product $p, string $unitKind, float $newQty): bool
     {
-        $p = Product::findOrFail($id);
-        $key = $id . '-' . $unitKind;
-
-        if ($unitKind === 'alternatif' && ! $p->alt_unit_qty) {
-            return;
-        }
         $need = $unitKind === 'alternatif' ? (float) $p->alt_unit_qty : 1.0;
-        $onCart = isset($this->cart[$key]) ? (float) $this->cart[$key]['qty'] : 0.0;
         $stock = (float) DB::table('stock_balances')
-            ->where('product_id', $id)->where('location_id', $this->tokoId())->value('qty');
+            ->where('product_id', $p->id)->where('location_id', $this->tokoId())->value('qty');
         $allowNeg = DB::table('app_settings')->where('key', 'allow_negative_stock')->value('value') === 'true';
-        if (! $allowNeg && ($onCart + 1) * $need > $stock) {
+        if (! $allowNeg && $newQty * $need > $stock) {
             Notification::make()
                 ->title('Stok ' . $p->name . ' tidak cukup')
                 ->body('Stok tersedia ' . rtrim(rtrim(number_format($stock, 3, ',', '.'), '0'), ',') . ' ' . $p->base_unit)
                 ->warning()->send();
 
+            return false;
+        }
+
+        return true;
+    }
+
+    public function addProduct(int $id, string $unitKind = 'dasar'): void
+    {
+        $p = Product::findOrFail($id);
+        if ($unitKind === 'alternatif' && ! $p->alt_unit_qty) {
+            return;
+        }
+        $key = $id . '-' . $unitKind;
+        $onCart = isset($this->cart[$key]) ? (float) $this->cart[$key]['qty'] : 0.0;
+        if (! $this->stockOk($p, $unitKind, $onCart + 1)) {
             return;
         }
 
         if (isset($this->cart[$key])) {
-            $this->cart[$key]['qty']++;
+            $this->cart[$key]['qty'] = $onCart + 1;
+        } else {
+            $price = $this->priceFor($id, $unitKind);
+            if ($price === null) {
+                Notification::make()->title('Harga ' . $p->name . ' belum diisi')->warning()->send();
+
+                return;
+            }
+            $this->cart[$key] = [
+                'product_id' => $id,
+                'unit_kind' => $unitKind,
+                'name' => $p->name,
+                'unit' => $unitKind === 'alternatif' ? $p->alt_unit : $p->base_unit,
+                'qty' => 1,
+                'unit_price' => $price,
+                'discount' => 0,
+            ];
+        }
+        $this->dispatch('item-added');
+    }
+
+    public function incLine(string $key): void
+    {
+        if (! isset($this->cart[$key])) {
+            return;
+        }
+        $line = $this->cart[$key];
+        $p = Product::find($line['product_id']);
+        $new = (float) $line['qty'] + 1;
+        if ($p && ! $this->stockOk($p, $line['unit_kind'], $new)) {
+            return;
+        }
+        $this->cart[$key]['qty'] = $new;
+    }
+
+    public function decLine(string $key): void
+    {
+        if (! isset($this->cart[$key])) {
+            return;
+        }
+        $new = (float) $this->cart[$key]['qty'] - 1;
+        if ($new < 1) {
+            unset($this->cart[$key]);
 
             return;
         }
-        $price = $this->priceFor($id, $unitKind);
-        if ($price === null) {
-            Notification::make()->title('Harga ' . $p->name . ' belum diisi')->warning()->send();
-
-            return;
-        }
-        $this->cart[$key] = [
-            'product_id' => $id,
-            'unit_kind' => $unitKind,
-            'name' => $p->name,
-            'unit' => $unitKind === 'alternatif' ? $p->alt_unit : $p->base_unit,
-            'qty' => 1,
-            'unit_price' => $price,
-            'discount' => 0,
-        ];
+        $this->cart[$key]['qty'] = $new;
     }
 
     public function removeLine(string $key): void
@@ -228,6 +264,16 @@ class Kasir extends Page
     {
         $this->reset(['cart', 'discount', 'cash', 'search', 'customerId', 'useCredit', 'dueDate']);
         $this->dispatch('fokus-barcode');
+    }
+
+    public function setCash($amount): void
+    {
+        $this->cash = (float) $amount;
+    }
+
+    public function cashExact(): void
+    {
+        $this->cash = $this->total();
     }
 
     public function total(): float
@@ -350,6 +396,7 @@ class Kasir extends Page
         $customerId = $this->customerId ? (int) $this->customerId : null;
         $total = $this->total();
         $paid = min((float) $this->cash, $total);
+        $kembalian = $this->useCredit ? 0.0 : max(0, (float) $this->cash - $total);
 
         $dueDate = null;
         if ($this->useCredit && $paid < $total) {
@@ -385,7 +432,7 @@ class Kasir extends Page
         }
         $docNo = DB::table('sales')->where('id', $saleId)->value('doc_no');
         $this->reset(['cart', 'discount', 'cash', 'search', 'customerId', 'useCredit', 'dueDate', 'tierCode', 'method']);
-        Notification::make()->title('Nota ' . $docNo . ' tersimpan')->success()->send();
+        $this->dispatch('nota-sukses', doc: $docNo, change: $kembalian);
         $this->dispatch('cetak-struk', url: route('struk', $saleId));
         $this->dispatch('fokus-barcode');
     }
